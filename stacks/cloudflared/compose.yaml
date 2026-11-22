@@ -1,0 +1,48 @@
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
+    container_name: cloudflared
+    restart: unless-stopped
+    # cloudflared drains in-flight requests for up to 30s; Docker's default
+    # stop timeout is 10s.
+    stop_grace_period: 35s
+    command: tunnel run
+    # TrueNAS runs its apps as uid/gid 568; the image is distroless and nonroot.
+    user: 568:568
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+      # Keep the metrics and readiness endpoint off the Docker network; the
+      # healthcheck below queries it over loopback.
+      TUNNEL_METRICS: 127.0.0.1:20241
+      # The image sets this too; keep it explicit.
+      NO_AUTOUPDATE: "true"
+      TZ: Etc/UTC
+    # Token mode needs no files and no capabilities: the tunnel dials out only.
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 4g
+    memswap_limit: 8g
+    cpus: 2
+    # The distroless image has no shell or HTTP client. cloudflared's own
+    # `tunnel ready` subcommand queries the metrics server's /ready endpoint.
+    healthcheck:
+      test:
+        - CMD
+        - cloudflared
+        - tunnel
+        - --metrics
+        - 127.0.0.1:20241
+        - ready
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+networks: {}
