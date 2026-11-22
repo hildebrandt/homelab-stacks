@@ -1,0 +1,41 @@
+services:
+  komga:
+    image: ghcr.io/gotson/komga:1.30.0@sha256:3ae42f88511211e0ec2637d88f3df1b709d07cfb093427e58444ae200a62608e
+    container_name: komga
+    user: 568:568
+    restart: unless-stopped
+    stop_grace_period: 35s
+    ports:
+      - ${HOST_IP:-192.168.10.2}:30048:30048 # LAN only; Komga listens on SERVER_PORT
+    environment:
+      TZ: Europe/Berlin
+      KOMGA_CONFIGDIR: /config
+      SERVER_PORT: "30048"
+    volumes:
+      - /mnt/pool-01/apps/komga:/config # database, sessions, tasks, logs, lucene index
+      - /mnt/pool-01/media/Comics:/data # comic library
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -fsS
+        - -o
+        - /dev/null
+        - http://127.0.0.1:30048/actuator/health
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      start_interval: 2s
+      retries: 5
+    mem_limit: 4g
+    cpus: 2
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges=true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+networks: {}
