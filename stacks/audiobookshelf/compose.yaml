@@ -1,0 +1,41 @@
+services:
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:2.37.2@sha256:b897c33f05972fb1bf484f7487bc878fa91ec8691335c1db6e2929c3a7658efa
+    container_name: audiobookshelf
+    restart: unless-stopped
+    user: 568:568
+    stop_signal: SIGINT
+    environment:
+      TZ: Europe/Berlin
+      PORT: "30067"
+      CONFIG_PATH: /config
+      METADATA_PATH: /metadata
+    ports:
+      - 30067:30067
+    volumes:
+      - /mnt/pool-01/media/Audiobooks:/audiobooks
+      - /mnt/pool-01/apps/audiobookshelf/config:/config
+      - /mnt/pool-01/apps/audiobookshelf/metadata:/metadata
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --quiet
+        - --spider
+        - http://127.0.0.1:30067/healthcheck
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 5
+    security_opt:
+      - no-new-privileges=true
+    cap_drop:
+      - ALL
+    mem_limit: 4g
+    memswap_limit: 8g
+    cpus: 2
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
