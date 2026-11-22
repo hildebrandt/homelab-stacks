@@ -1,0 +1,19 @@
+services:
+  evcc:
+    image: evcc/evcc:0.319.1
+    restart: unless-stopped
+    environment:
+      TZ: Europe/Berlin
+    ports:
+      - ${HOST_IP:-192.168.10.2}:7070:7070 # web UI and API
+      - ${HOST_IP:-192.168.10.2}:8887:8887 # OCPP server
+    volumes:
+      - ${EVCC_CONFIG:-/mnt/pool-01/apps/evcc/config/evcc.yaml}:/etc/evcc.yaml
+      - ${EVCC_DATA:-/mnt/pool-01/apps/evcc/data}:/root/.evcc
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
