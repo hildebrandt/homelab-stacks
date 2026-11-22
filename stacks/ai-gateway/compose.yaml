@@ -1,0 +1,214 @@
+# Single log-rotation policy: the default json-file driver grows without bound.
+x-logging: &a1
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+# Shared readiness probe for both Qdrant instances.
+x-qdrant-healthcheck: &a2
+  test:
+    - CMD
+    - bash
+    - -ec
+    - "exec 3<>/dev/tcp/127.0.0.1/6333; printf 'GET /readyz HTTP/1.0\\r\\nHost:
+      localhost\\r\\n\\r\\n' >&3; read -r protocol status reason <&3; test
+      \"$$status\" = 200"
+  interval: 15s
+  timeout: 5s
+  retries: 3
+  start_period: 20s
+services:
+  omniroute-redis:
+    image: docker.io/library/redis:8.10.3
+    container_name: omniroute-redis
+    restart: unless-stopped
+    logging: *a1
+    mem_limit: 512m
+    pids_limit: 128
+    volumes:
+      - ${DATA_ROOT:-/mnt/pool-01/apps/ai-gateway}/omniroute-redis/data:/data
+    command: redis-server --save 60 1 --loglevel warning
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - ping
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - omniroute-data
+  omniroute:
+    container_name: omniroute
+    restart: unless-stopped
+    stop_grace_period: 40s
+    mem_limit: 1g
+    pids_limit: 512
+    logging: *a1
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - healthcheck.mjs
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    build:
+      context: omniroute
+      target: runner-web
+      args:
+        OMNIROUTE_BASE_PATH: ${OMNIROUTE_BASE_PATH:-}
+    image: omniroute:web
+    pull_policy: build
+    depends_on:
+      omniroute-redis:
+        condition: service_healthy
+      omniroute-qdrant:
+        condition: service_healthy
+    environment:
+      - DATA_DIR=/app/data
+      - PORT=${DASHBOARD_PORT:-20128}
+      - DASHBOARD_PORT=${DASHBOARD_PORT:-20128}
+      - API_PORT=${API_PORT:-20129}
+      - API_HOST=${API_HOST:-0.0.0.0}
+      - LIVE_WS_PORT=${LIVE_WS_PORT:-20132}
+      - LIVE_WS_HOST=${LIVE_WS_HOST:-0.0.0.0}
+      - LIVE_WS_ALLOWED_ORIGINS=${LIVE_WS_ALLOWED_ORIGINS:-http://localhost:${DASHBOARD_PORT:-20128},http://127.0.0.1:${DASHBOARD_PORT:-20128},http://${APP_BIND_HOST:?APP_BIND_HOST
+        is required}:${DASHBOARD_PORT:-20128}}
+      - REDIS_URL=${REDIS_URL:-redis://omniroute-redis:6379}
+      - QDRANT_HOST=${QDRANT_HOST:-omniroute-qdrant}
+      - QDRANT_PORT=6333
+      - OMNIROUTE_BASE_PATH=${OMNIROUTE_BASE_PATH:-}
+      - REQUIRE_API_KEY=${REQUIRE_API_KEY:?REQUIRE_API_KEY is required}
+    volumes:
+      - ${DATA_ROOT:-/mnt/pool-01/apps/ai-gateway}/omniroute/data:/app/data
+    ports:
+      - ${APP_BIND_HOST:?APP_BIND_HOST is
+        required}:${DASHBOARD_PORT:-20128}:${DASHBOARD_PORT:-20128}
+      - ${APP_BIND_HOST:?APP_BIND_HOST is
+        required}:${LIVE_WS_PORT:-20132}:${LIVE_WS_PORT:-20132}
+    networks:
+      - edge
+      - omniroute-data
+    security_opt:
+      - no-new-privileges:true
+  omniroute-qdrant:
+    image: docker.io/qdrant/qdrant:v1.20.2
+    container_name: omniroute-qdrant
+    restart: unless-stopped
+    logging: *a1
+    mem_limit: 1g
+    pids_limit: 256
+    volumes:
+      - ${DATA_ROOT:-/mnt/pool-01/apps/ai-gateway}/omniroute-qdrant/storage:/qdrant/storage
+    healthcheck: *a2
+    networks:
+      - omniroute-data
+  headroom:
+    image: ghcr.io/headroomlabs-ai/headroom@sha256:75992f0e4f41b53b761c0c66f3a8f7bd17998d67a6a8034ec20fb09bf031058e
+    container_name: headroom
+    restart: unless-stopped
+    logging: *a1
+    mem_limit: 2g
+    pids_limit: 512
+    command:
+      - --host
+      - 0.0.0.0
+    environment:
+      - HEADROOM_HOST=0.0.0.0
+      - HEADROOM_PORT=30129
+      - HOME=/root
+      - HEADROOM_WORKSPACE_DIR=/root/.headroom
+      - HEADROOM_CONFIG_DIR=/root/.headroom/config
+      - OPENAI_TARGET_API_URL=http://omniroute:${API_PORT:-20129}
+      - HEADROOM_ALLOW_UNAUTHENTICATED_BIND=1
+      - HEADROOM_CCR_BACKEND=redis
+      - HEADROOM_REDIS_URL=${HEADROOM_REDIS_URL:-redis://headroom-redis:6379}
+      - DO_NOT_TRACK=1
+    ports:
+      - ${HEADROOM_BIND_HOST:-192.168.10.2}:30129:30129
+    volumes:
+      - ${DATA_ROOT:-/mnt/pool-01/apps/ai-gateway}/headroom/workspace:/root/.headroom
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      omniroute:
+        condition: service_healthy
+      headroom-redis:
+        condition: service_healthy
+      headroom-qdrant:
+        condition: service_healthy
+      headroom-neo4j:
+        condition: service_healthy
+    networks:
+      - edge
+      - headroom-data
+  headroom-qdrant:
+    image: docker.io/qdrant/qdrant:v1.20.2
+    container_name: headroom-qdrant
+    restart: unless-stopped
+    logging: *a1
+    mem_limit: 1g
+    pids_limit: 256
+    volumes:
+      - ${DATA_ROOT:-/mnt/pool-01/apps/ai-gateway}/headroom-qdrant/storage:/qdrant/storage
+    healthcheck: *a2
+    networks:
+      - headroom-data
+  headroom-redis:
+    image: docker.io/library/redis:8.10.3
+    container_name: headroom-redis
+    restart: unless-stopped
+    logging: *a1
+    mem_limit: 512m
+    pids_limit: 128
+    volumes:
+      - ${DATA_ROOT:-/mnt/pool-01/apps/ai-gateway}/headroom-redis/data:/data
+    command: redis-server --save 60 1 --loglevel warning --maxmemory 384mb
+      --maxmemory-policy allkeys-lru
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - ping
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - headroom-data
+  headroom-neo4j:
+    image: neo4j:2026.10.2
+    container_name: headroom-neo4j
+    restart: unless-stopped
+    logging: *a1
+    mem_limit: 2g
+    pids_limit: 512
+    ports:
+      - 127.0.0.1:7474:7474
+      - 127.0.0.1:7687:7687
+    volumes:
+      - ${DATA_ROOT:-/mnt/pool-01/apps/ai-gateway}/headroom-neo4j/data:/data
+      - headroom-neo4j-logs:/logs
+    environment:
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:?NEO4J_PASSWORD is required}
+      - NEO4J_PLUGINS=["apoc"]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - cypher-shell -u neo4j -p "$${NEO4J_AUTH#*/}" 'RETURN 1'
+      interval: 60s
+      timeout: 15s
+      retries: 5
+      start_period: 60s
+    networks:
+      - headroom-data
+networks:
+  # Edge: the only shared path between omniroute and headroom.
+  edge: {}
+  # OmniRoute data plane: reachable only from omniroute.
+  omniroute-data: {}
+  # Headroom data plane: reachable only from headroom.
+  headroom-data: {}
+volumes:
+  headroom-neo4j-logs: {}
