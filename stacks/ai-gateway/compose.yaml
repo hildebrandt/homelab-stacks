@@ -205,10 +205,16 @@ services:
       - headroom-data
 networks:
   # Edge: the only shared path between omniroute and headroom.
-  edge: {}
+  edge: {
+    enable_ipv6: false
+  }
   # OmniRoute data plane: reachable only from omniroute.
-  omniroute-data: {}
+  omniroute-data: {
+    enable_ipv6: false
+  }
   # Headroom data plane: reachable only from headroom.
-  headroom-data: {}
+  headroom-data: {
+    enable_ipv6: false
+  }
 volumes:
   headroom-neo4j-logs: {}
