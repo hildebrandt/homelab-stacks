@@ -1,0 +1,28 @@
+services:
+  nogon:
+    image: ghcr.io/asciimoo/nogon:v0.22.0
+    container_name: nogon
+    restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    working_dir: /nogon/data
+    environment:
+      - NOGON_DATA_DIR=/nogon/data
+      - NOGON__SERVER__ADDRESS=0.0.0.0:4433
+      - NOGON__SERVER__BASE_URL=http://192.168.10.2:4433
+      - NOGON__APP__ACCESS_TOKEN=${NOGON_ACCESS_TOKEN:?missing}
+    volumes:
+      - /mnt/pool-01/apps/nogon/data:/nogon/data
+    ports:
+      - 192.168.10.2:4433:4433
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
