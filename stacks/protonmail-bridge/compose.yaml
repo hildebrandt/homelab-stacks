@@ -1,0 +1,52 @@
+# First run needs an interactive login before any mail client can authenticate:
+#   docker exec -it protonmail-bridge bash
+#   pkill bridge
+#   /usr/bin/bridge --cli        # login, then "change mode 0" for multiple addresses
+#   exit
+#   docker compose restart      # the entrypoint keeps running, so restart it yourself
+#
+# The SMTP/IMAP passwords are random per address, not your Proton password.
+# The "info" command in that shell prints them; repeat the steps to see them again.
+services:
+  protonmail-bridge:
+    image: ghcr.io/videocurio/proton-mail-bridge:v3.24.2
+    container_name: protonmail-bridge
+    # Engine 28+ keeps these loopback bindings off the LAN. On older Engines the
+    # DNAT rule matches on any interface, so a neighbor host can still reach
+    # them (moby#49325).
+    ports:
+      - 127.0.0.1:1025:25/tcp
+      - 127.0.0.1:1143:143/tcp
+    volumes:
+      - type: bind
+        source: /mnt/pool-01/apps/protonmail-bridge
+        target: /root
+        bind:
+          create_host_path: false
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    # The image's own check probes only the socat forwarders on 25/143, and those
+    # stay open after the bridge dies. Read the full protocol banners instead, so
+    # the probe goes through socat to the bridge on 1025/1143. Reading a complete
+    # line avoids a partial-read RST, which socat logs as "Connection reset by peer".
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - timeout 2 bash -c 'exec 3<>/dev/tcp/127.0.0.1/25; IFS= read -r line
+          <&3 && [[ $$line == 220* ]]' && timeout 2 bash -c 'exec
+          3<>/dev/tcp/127.0.0.1/143; IFS= read -r line <&3 && [[ $$line == "*
+          OK"* ]]'
+      interval: 60s
+      timeout: 6s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
