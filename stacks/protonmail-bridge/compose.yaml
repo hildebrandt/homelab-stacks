@@ -37,10 +37,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - timeout 2 bash -c 'exec 3<>/dev/tcp/127.0.0.1/25; IFS= read -r line
-          <&3 && [[ $$line == 220* ]]' && timeout 2 bash -c 'exec
-          3<>/dev/tcp/127.0.0.1/143; IFS= read -r line <&3 && [[ $$line == "*
-          OK"* ]]'
+        - timeout 2 bash -c 'exec 3<>/dev/tcp/127.0.0.1/25; IFS= read -r line<&3 && [[ $$line == 220* ]]' && timeout 2 bash -c 'exec 3<>/dev/tcp/127.0.0.1/143; IFS= read -r line <&3 && [[ $$line == "*OK"* ]]'
       interval: 60s
       timeout: 6s
       retries: 3
